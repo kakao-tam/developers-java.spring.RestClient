@@ -6,7 +6,8 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -30,11 +31,11 @@ public class KakaoApiService {
     private String redirectUri;
 
     private final ObjectMapper objectMapper;
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
 
-    public KakaoApiService(ObjectMapper objectMapper, RestTemplate restTemplate) {
+    public KakaoApiService(ObjectMapper objectMapper, RestClient.Builder restClientBuilder) {
         this.objectMapper = objectMapper;
-        this.restTemplate = restTemplate;
+        this.restClient = restClientBuilder.baseUrl(kapiHost).build();
     }
 
     public String createDefaultMessage() {
@@ -59,34 +60,23 @@ public class KakaoApiService {
     }
 
     private String call(String method, String urlString, String body) throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(getAccessToken());
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        RestClient.RequestBodySpec requestSpec = restClient.method(HttpMethod.valueOf(method))
+                .uri(urlString)
+                .headers(headers -> headers.setBearerAuth(getAccessToken()));
 
-        HttpEntity<String> request;
         if (body != null) {
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            request = new HttpEntity<>(body, headers);
-        } else {
-            request = new HttpEntity<>(headers);
+            requestSpec.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(body);
         }
-
-        HttpMethod httpMethod = HttpMethod.valueOf(method);
         try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    urlString,
-                    httpMethod,
-                    request,
-                    String.class);
-            return response.getBody();
-        } catch (Exception e) {
+            return requestSpec.retrieve()
+                    .body(String.class);
+        } catch (RestClientResponseException e) {
 
-            if (e instanceof org.springframework.web.client.HttpStatusCodeException) {
-                org.springframework.web.client.HttpStatusCodeException httpException = (org.springframework.web.client.HttpStatusCodeException) e;
-                return httpException.getResponseBodyAsString();
-            }
-
-            throw e;
+            // 에러 메시지 (응답 바디)
+            String errorBody = e.getResponseBodyAsString();
+            System.out.println("Error Body: " + errorBody);
+            return errorBody;
         }
     }
 
